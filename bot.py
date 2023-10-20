@@ -6,7 +6,54 @@ import asyncio
 import csv
 from discord.ext import commands
 
+openai.api_key = settings.OPENAI_API_KEY
+SYSTEM = "You are a helpful assitant and you are tasked with creating a CSV of the user's input topic with the user's input columns. Omit the column headers.You will maintain the column order with the same topic. You will ONLY answer with the desired CSV."
+TEMPERATURE = 1
+TOKENS_PER_REQUEST = 400
+PRESENCE_PENALTY = 0.6
+NUKE = False
 
+async def get_response(system, history, prompt, tokens):
+    print("running completion")
+    total_tokens = tokens
+    run = True
+    messages = [
+        { "role": "system", "content": system },
+    ]
+    # add the previous prompts and answers
+    for question, answer in history:
+        messages.append({ "role": "user", "content": question })
+        messages.append({ "role": "assistant", "content": answer })
+    # add the new prompt
+    messages.append({ "role": "user", "content": prompt })
+    print(messages)
+
+    # create the completion
+    while run == True and total_tokens > 0:
+        gpt_response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            temperature=TEMPERATURE,
+            max_tokens=TOKENS_PER_REQUEST,
+            presence_penalty=PRESENCE_PENALTY,
+        )
+        total_tokens -= gpt_response.usage.completion_tokens
+
+        if NUKE == True:
+            run = True
+        else:
+            run = False
+    
+    return gpt_response.choices[0].message.content
+
+async def response_to_csv(response):
+    print("running csv")
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerows([row.split(';') for row in response.strip().split('\n')])
+
+    output.seek(0)
+    return output
 
 def run():
     intents = discord.Intents.default()
@@ -18,83 +65,73 @@ def run():
     async def on_ready():
         print(f'{bot.user.name} has connected to Discord!')
         print(f'{bot.user.id} is the bot id')
-        print(settings.DISCORD_TOKEN)
-        print(settings.OPENAI_API_KEY)
-        #print all of the permissions the bot has
-        # perms = discord.Permissions()
-        # for perm in perms:
-        #     print(perm)
 
     @bot.command(name='ping', help='Responds with pong')
     async def ping(ctx):
         await ctx.send('pong')
-        print('bot has executed command ping')
 
     @bot.command(name='data', help='Responds with ChatGPT generated table in CSV format')
     async def data(ctx):
-        await ctx.send("Please specify topic and columns separated by commas (Example: <topic>,  <col1>, <col2>, <col3>). Example: 'cars, make, model, year'")
+        await ctx.send("Please specify topic and columns separated by commas.\nExample: 'top 50 books, sales, ratings, short summary'\nNOTE: SPECIFY AMOUNT OF ROWS IN TOPIC. Example: '100 video games' or esle chatgpt will generate fewer rows than possible.")
 
         def check(m):
             return m.author == ctx.author
+        
+        def check_fire_mode(m):
+            return m.author == ctx.author and (m.content == 'come' or m.content == 'nuke')
+        
+        def keep_going(m):
+            return m.author == ctx.author and (m.content == 'yes' or m.content == 'no')
 
         try:
+            #TOPIC AND COLUMNS
             text_input = await bot.wait_for('message', check=check, timeout=60)
+
+            #FIRE OR NUKE MODE
+            await ctx.send("Do you want to see your entries as they come💦 or do you want to NUKE💥 it all at once? Type 'come' for as they come or 'nuke' for all at once.")
+            fire_mode = await bot.wait_for('message', check=check_fire_mode, timeout=60)
+            if fire_mode.content == 'come':
+                NUKE = False
+                await ctx.send("Firing up the CSV generator🔫😂...")
+            elif fire_mode.content == 'nuke':
+                NUKE = True
+                await ctx.send("You chose death💀...")
+
+            #GENERATE PROMPT
             await ctx.send("Generating your CSV file...")
             text = text_input.content.split(',')
             text = [col.strip() for col in text]
-            print(text)
             topic = text[0]
-            print("topic: "+ topic)
             columns = text[1:]
-            print("columns: ".join(columns))
 
-            # Initialize an empty string to accumulate content from ChatGPT
-            generated_content = ""
+            history = []
 
-            #Enter openai key here
-            openai.api_key = settings.OPENAI_API_KEY
+            prompt = "Using ; as a delimiter, create a CSV of " + topic +" along with: " + ", ".join(columns)+ "\n EXCLUDE COLUMN NAMES AND KEEP EXACTLY IN THAT ORDER OF COLUMNS. DO NOT REPEAT ENTRIES"
 
+            #GENERATE RESPONSE
             generated_content = []
+            total_tokens = 3900
+            run = True
+            while run == True:
+                response = await get_response(SYSTEM, history , prompt, total_tokens)
+                history.append((prompt, response))
+                generated_content.append(response)
+                if NUKE == False:
+                    await ctx.send(response)
+                    await ctx.send("Do you want more entries u little bitch🍭? Type 'yes' or 'no'.")
+                    status = await bot.wait_for('message', check=keep_going, timeout=60)
+                    if status.content == 'yes':
+                        await ctx.send("Firing up the CSV generator🔫😂...again")
+                        continue
+                    else: 
+                        run = False
+                        await ctx.send("Finishing up👅...")
 
-            # Define the total number of tokens you want
-            total_tokens = 5000  # You can adjust this value as needed
-
-            # Define the number of tokens per request (e.g., a safe limit is 4096 tokens)
-            max_tokens_per_request = 4000  # Adjust as needed
-
-            prompt = "Using ; as a delimiter, create a CSV of 50" + topic +" along with: " + ", ".join(columns)+ "\n EXCLUDE COLUMN NAMESAND KEEP EXACTLY IN THAT ORDER OF COLUMNS."
-            print(prompt)
-
-            while total_tokens > 0:
-                tokens_to_request = min(total_tokens, max_tokens_per_request)
-                gpt_response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{'role': 'system', 'content': "You are an assitant specializing in data entry. You are tasked with creating a CSV of the user's input topic with the user's input columns. Omit the column headers. You will ONLY answer with the desired CSV."},
-                              {'role': 'user', 'content': prompt}
-                              ],
-                    temperature=1,
-                    max_tokens=tokens_to_request,
-                    presence_penalty=0.6,
-                )
-                print(gpt_response.usage.completion_tokens)
-
-                generated_content.append(gpt_response.choices[0].message.content)
-
-                total_tokens -= gpt_response.usage.completion_tokens
-                print(total_tokens)
-                asyncio.sleep(1)
-
-            # calculate the time it took to receive the response
-            completed_content = "".join(generated_content)
-
-
-            # Create a CSV file with the specified columns and generated content
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerows([row.split(';') for row in completed_content.strip().split('\n')])
+            #OUTPUT CSV            
+            complete_content = ''.join(generated_content)
+            output = response_to_csv(complete_content)
 
             filename = topic.strip() + ".csv"
-            output.seek(0)
             await ctx.send("Here's your CSV file:")
             await ctx.send(file=discord.File(output, filename=filename))
 
