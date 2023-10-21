@@ -6,10 +6,12 @@ import asyncio
 import csv
 from discord.ext import commands
 
+#TODO: Use tokenizer(tiktoken) for message/history tokens and completion tokens to calc limit
+#TODO: Research into how to implement chat history correctly
+
 openai.api_key = settings.OPENAI_API_KEY
 SYSTEM = "You are a helpful assitant and you are tasked with creating a CSV of the user's input topic with the user's input columns. Omit the column headers.You will maintain the column order with the same topic. You will ONLY answer with the desired CSV."
 TEMPERATURE = 1
-TOKENS_PER_REQUEST = 400
 PRESENCE_PENALTY = 0.6
 NUKE = False
 
@@ -17,6 +19,7 @@ async def get_response(system, history, prompt, tokens):
     print("running completion")
     total_tokens = tokens
     run = True
+
     messages = [
         { "role": "system", "content": system },
     ]
@@ -26,18 +29,19 @@ async def get_response(system, history, prompt, tokens):
         messages.append({ "role": "assistant", "content": answer })
     # add the new prompt
     messages.append({ "role": "user", "content": prompt })
-    print(messages)
 
     # create the completion
     while run == True and total_tokens > 0:
         gpt_response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-3.5-turbo-16k",
             messages=messages,
             temperature=TEMPERATURE,
-            max_tokens=TOKENS_PER_REQUEST,
+            max_tokens=1000,
             presence_penalty=PRESENCE_PENALTY,
         )
         total_tokens -= gpt_response.usage.completion_tokens
+        print("total tokens left: ", total_tokens)
+        print("completion tokens used: ", gpt_response.usage.completion_tokens)
 
         if NUKE == True:
             run = True
@@ -106,11 +110,11 @@ def run():
 
             history = []
 
-            prompt = "Using ; as a delimiter, create a CSV of " + topic +" along with: " + ", ".join(columns)+ "\n EXCLUDE COLUMN NAMES AND KEEP EXACTLY IN THAT ORDER OF COLUMNS. DO NOT REPEAT ENTRIES"
+            prompt = "Using ; as a delimiter, create a CSV of " + topic +" along with: " + ", ".join(columns)+ "\n EXCLUDE COLUMN NAMES, DO NOT REPEAT ENTRIES, GIVE ME AS MANY ENTRIES AS POSSIBLE."
 
             #GENERATE RESPONSE
             generated_content = []
-            total_tokens = 3900
+            total_tokens = 2000
             run = True
             while run == True:
                 response = await get_response(SYSTEM, history , prompt, total_tokens)
@@ -129,7 +133,7 @@ def run():
 
             #OUTPUT CSV            
             complete_content = ''.join(generated_content)
-            output = response_to_csv(complete_content)
+            output = await response_to_csv(complete_content)
 
             filename = topic.strip() + ".csv"
             await ctx.send("Here's your CSV file:")
