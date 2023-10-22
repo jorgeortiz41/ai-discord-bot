@@ -5,20 +5,29 @@ import io
 import asyncio
 import csv
 from discord.ext import commands
+from discord import app_commands
 
 #TODO: Use tokenizer(tiktoken) for message/history tokens and completion tokens to calc limit
-#TODO: Research into how to implement chat history correctly
+#TODO: Refactor csv gpt code to have history fixed like gpt
+#TODO: Add a way to clear history
+#TODO: Add a way to change the temperature and presence penalty
+#TODO: Add a way to change the max tokens
+#TODO: Update gpt_response with new firemodes and command structure
+#TODO: CHANGE DATA COMMAND COLUMNS TO OPTIONAL
+
 
 openai.api_key = settings.OPENAI_API_KEY
-SYSTEM = "You are a helpful assitant and you are tasked with creating a CSV of the user's input topic with the user's input columns. Omit the column headers.You will maintain the column order with the same topic. You will ONLY answer with the desired CSV."
+SYSTEM_CSV = "You are a helpful assitant and you are tasked with creating a CSV of the user's input topic with the user's input columns. Omit the column headers.You will maintain the column order with the same topic. You will ONLY answer with the desired CSV."
 TEMPERATURE = 1
 PRESENCE_PENALTY = 0.6
-NUKE = False
+HISTORY = []
 
 async def get_response(system, history, prompt, tokens):
-    print("running completion")
+    print(f"running completion of {prompt}")
     total_tokens = tokens
-    run = True
+    generated_response = []
+    completed_response = ''
+    
 
     messages = [
         { "role": "system", "content": system },
@@ -31,24 +40,23 @@ async def get_response(system, history, prompt, tokens):
     messages.append({ "role": "user", "content": prompt })
 
     # create the completion
-    while run == True and total_tokens > 0:
-        gpt_response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo-16k",
-            messages=messages,
-            temperature=TEMPERATURE,
-            max_tokens=1000,
-            presence_penalty=PRESENCE_PENALTY,
-        )
-        total_tokens -= gpt_response.usage.completion_tokens
-        print("total tokens left: ", total_tokens)
-        print("completion tokens used: ", gpt_response.usage.completion_tokens)
-
-        if NUKE == True:
-            run = True
-        else:
-            run = False
+    print("fetching completion...")
+    gpt_response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo-16k",
+        messages=messages,
+        temperature=TEMPERATURE,
+        max_tokens=total_tokens,
+        presence_penalty=PRESENCE_PENALTY,
+    )
+    print("completion fetched")
+    generated_response.append(gpt_response.choices[0].message.content)
+    print("total tokens left: ", total_tokens)
+    print("completion tokens used: ", gpt_response.usage.completion_tokens)
+    print("history length: ", len(history))
     
-    return gpt_response.choices[0].message.content
+    completed_response = ''.join(generated_response)
+
+    return completed_response
 
 async def response_to_csv(response):
     print("running csv")
@@ -69,81 +77,68 @@ def run():
     async def on_ready():
         print(f'{bot.user.name} has connected to Discord!')
         print(f'{bot.user.id} is the bot id')
-
-    @bot.command(name='ping', help='Responds with pong')
-    async def ping(ctx):
-        await ctx.send('pong')
-
-    @bot.command(name='data', help='Responds with ChatGPT generated table in CSV format')
-    async def data(ctx):
-        await ctx.send("Please specify topic and columns separated by commas.\nExample: 'top 50 books, sales, ratings, short summary'\nNOTE: SPECIFY AMOUNT OF ROWS IN TOPIC. Example: '100 video games' or esle chatgpt will generate fewer rows than possible.")
-
-        def check(m):
-            return m.author == ctx.author
-        
-        def check_fire_mode(m):
-            return m.author == ctx.author and (m.content == 'come' or m.content == 'nuke')
-        
-        def keep_going(m):
-            return m.author == ctx.author and (m.content == 'yes' or m.content == 'no')
-
         try:
-            #TOPIC AND COLUMNS
-            text_input = await bot.wait_for('message', check=check, timeout=60)
+            synced = await bot.tree.sync()
+            print('synced commands: ', synced)
+        except:
+            print("failed to sync commands")
 
-            #FIRE OR NUKE MODE
-            await ctx.send("Do you want to see your entries as they come💦 or do you want to NUKE💥 it all at once? Type 'come' for as they come or 'nuke' for all at once.")
-            fire_mode = await bot.wait_for('message', check=check_fire_mode, timeout=60)
-            if fire_mode.content == 'come':
-                NUKE = False
-                await ctx.send("Firing up the CSV generator🔫😂...")
-            elif fire_mode.content == 'nuke':
-                NUKE = True
-                await ctx.send("You chose death💀...")
+    '''
+    PING COMMAND
+    '''
+    @bot.tree.command(name='ping', description='responds with pong')
+    async def ping(ctx: discord.Interaction):
+        await ctx.response.send_message(f'{ctx.user.mention} pong', ephemeral=True)
 
-            #GENERATE PROMPT
-            await ctx.send("Generating your CSV file...")
-            text = text_input.content.split(',')
-            text = [col.strip() for col in text]
-            topic = text[0]
-            columns = text[1:]
+    '''
+    GPT COMMAND
+    '''
+    @bot.tree.command(name='gpt', description='responds with ChatGPT response')
+    @app_commands.describe(prompt = 'The prompt to generate a response to')
+    async def gpt(ctx: discord.Interaction, prompt: str):
+        global HISTORY
+        await ctx.response.send_message("Bot is thinking... he's a bit retarded", ephemeral=True)
+        
+        system_message = 'You are a helpful assitant and you are tasked with answer the user\'s questions. Use chat history to answer the user\'s questions when needed.'
+        total_tokens = 600
 
-            history = []
+        if len(HISTORY) >= 6:
+            HISTORY = HISTORY[-6:]
+                
 
-            prompt = "Using ; as a delimiter, create a CSV of " + topic +" along with: " + ", ".join(columns)+ "\n EXCLUDE COLUMN NAMES, DO NOT REPEAT ENTRIES, GIVE ME AS MANY ENTRIES AS POSSIBLE."
+        response = await get_response(system_message ,HISTORY, prompt, total_tokens)
+        HISTORY.append((prompt, response))
 
-            #GENERATE RESPONSE
-            generated_content = []
-            total_tokens = 2000
-            run = True
-            while run == True:
-                response = await get_response(SYSTEM, history , prompt, total_tokens)
-                history.append((prompt, response))
-                generated_content.append(response)
-                if NUKE == False:
-                    await ctx.send(response)
-                    await ctx.send("Do you want more entries u little bitch🍭? Type 'yes' or 'no'.")
-                    status = await bot.wait_for('message', check=keep_going, timeout=60)
-                    if status.content == 'yes':
-                        await ctx.send("Firing up the CSV generator🔫😂...again")
-                        continue
-                    else: 
-                        run = False
-                        await ctx.send("Finishing up👅...")
+        await ctx.edit_original_response(content=response + "\n Message expires after 60 seconds.")
+        await asyncio.sleep(300)
+        await ctx.delete_original_response()
 
-            #OUTPUT CSV            
-            complete_content = ''.join(generated_content)
-            output = await response_to_csv(complete_content)
+    '''
+    DATA COMMAND
+    '''
+    @bot.tree.command(name='data', description="responds with ChatGPT output as CSV Spreadsheet")
+    async def data(ctx: discord.Interaction, topic: str, entries: int, col1: str, col2: str, col3: str, col4: str, col5: str):
+        global HISTORY
+        await ctx.response.send_message("Bot is thinking... he's a bit retarded", ephemeral=True)
+        columns = [col1, col2, col3, col4, col5]
+        for col in columns:
+            if col == '':
+                columns.remove(col)
+        column_names = ', '.join(columns)
+        prompt = f'Generate a CSV file with the following data:\nTopic: {topic}\nEntries: {entries}\nColumn Names: {column_names}\nDelimiter: ;\nDo not repeat entries.'
+        total_tokens = 4000
 
-            filename = topic.strip() + ".csv"
-            await ctx.send("Here's your CSV file:")
-            await ctx.send(file=discord.File(output, filename=filename))
+        if len(HISTORY) >= 6:
+            HISTORY = HISTORY[-6:]
+                
 
-        except asyncio.TimeoutError:
-            await ctx.send("Request timed out. Please try again.")
-            
+        response = await get_response(SYSTEM_CSV ,HISTORY, prompt, total_tokens)
+        HISTORY.append((prompt, response))
 
+        output = await response_to_csv(response)
+        filename = topic.strip() + ".csv"
 
+        await ctx.edit_original_response(content=f"Here is your {topic} CSV",attachments=[discord.File(output, filename=filename)])
 
     bot.run(settings.DISCORD_TOKEN)
 
