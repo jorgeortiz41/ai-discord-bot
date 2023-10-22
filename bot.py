@@ -8,11 +8,9 @@ from discord.ext import commands
 from discord import app_commands
 
 #TODO: Use tokenizer(tiktoken) for message/history tokens and completion tokens to calc limit
-#TODO: Refactor csv gpt code to have history fixed like gpt
 #TODO: Add a way to clear history
 #TODO: Add a way to change the temperature and presence penalty
 #TODO: Add a way to change the max tokens
-#TODO: Update gpt_response with new firemodes and command structure
 #TODO: CHANGE DATA COMMAND COLUMNS TO OPTIONAL
 
 
