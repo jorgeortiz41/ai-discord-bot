@@ -107,7 +107,7 @@ def run():
         response = await get_response(system_message ,HISTORY, prompt, total_tokens)
         HISTORY.append((prompt, response))
 
-        await ctx.edit_original_response(content=response + "\n Message expires after 60 seconds.")
+        await ctx.edit_original_response(content=response + "\n Message expires after 5 minutes.")
         await asyncio.sleep(300)
         await ctx.delete_original_response()
 
