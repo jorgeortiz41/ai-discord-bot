@@ -95,7 +95,7 @@ def run():
     @app_commands.describe(prompt = 'The prompt to generate a response to')
     async def gpt(ctx: discord.Interaction, prompt: str):
         global HISTORY
-        await ctx.response.send_message("Bot is thinking... he's a bit retarded", ephemeral=True)
+        await ctx.response.send_message("Bot is thinking... he's a bit slow", ephemeral=True)
         
         system_message = 'You are a helpful assitant and you are tasked with answer the user\'s questions. Use chat history to answer the user\'s questions when needed.'
         total_tokens = 600
@@ -117,7 +117,7 @@ def run():
     @bot.tree.command(name='data', description="responds with ChatGPT output as CSV Spreadsheet")
     async def data(ctx: discord.Interaction, topic: str, entries: int, col1: str, col2: str, col3: str, col4: str, col5: str):
         global HISTORY
-        await ctx.response.send_message("Bot is thinking... he's a bit retarded", ephemeral=True)
+        await ctx.response.send_message("Bot is thinking... he's a bit slow", ephemeral=True)
         columns = [col1, col2, col3, col4, col5]
         for col in columns:
             if col == '':
