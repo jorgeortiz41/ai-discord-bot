@@ -12,6 +12,7 @@ from discord import app_commands
 #TODO: Add a way to change the temperature and presence penalty
 #TODO: Add a way to change the max tokens
 #TODO: CHANGE DATA COMMAND COLUMNS TO OPTIONAL
+#TODO: remove all console logs for clarity
 
 
 openai.api_key = settings.OPENAI_API_KEY
@@ -25,7 +26,7 @@ async def get_response(system, history, prompt, tokens):
     total_tokens = tokens
     generated_response = []
     completed_response = ''
-    
+
 
     messages = [
         { "role": "system", "content": system },
@@ -51,7 +52,7 @@ async def get_response(system, history, prompt, tokens):
     print("total tokens left: ", total_tokens)
     print("completion tokens used: ", gpt_response.usage.completion_tokens)
     print("history length: ", len(history))
-    
+
     completed_response = ''.join(generated_response)
 
     return completed_response
@@ -96,13 +97,13 @@ def run():
     async def gpt(ctx: discord.Interaction, prompt: str):
         global HISTORY
         await ctx.response.send_message("Bot is thinking... he's a bit slow", ephemeral=True)
-        
+
         system_message = 'You are a helpful assitant and you are tasked with answer the user\'s questions. Use chat history to answer the user\'s questions when needed.'
         total_tokens = 600
 
         if len(HISTORY) >= 6:
             HISTORY = HISTORY[-6:]
-                
+
 
         response = await get_response(system_message ,HISTORY, prompt, total_tokens)
         HISTORY.append((prompt, response))
@@ -128,7 +129,7 @@ def run():
 
         if len(HISTORY) >= 6:
             HISTORY = HISTORY[-6:]
-                
+
 
         response = await get_response(SYSTEM_CSV ,HISTORY, prompt, total_tokens)
         HISTORY.append((prompt, response))
@@ -141,4 +142,4 @@ def run():
     bot.run(settings.DISCORD_TOKEN)
 
 if __name__ == "__main__":
-    run() 
+    run()
